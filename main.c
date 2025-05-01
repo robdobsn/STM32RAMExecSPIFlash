@@ -7,6 +7,8 @@
 // We'll use standard register definitions
 #include <stdint.h>
 
+// #define RUN_ON_NUCLEO_WL55JC
+
 ////////////////////////////////////////////////////////////
 // Definitions
 ////////////////////////////////////////////////////////////
@@ -73,7 +75,11 @@
 #define SCB_VTOR            (*(volatile uint32_t *)(SCB_BASE + 0x08))
 
 // LED is on PB15 on STM32WL55JC Nucleo
+#ifdef RUN_ON_NUCLEO_WL55JC
 #define LED_PIN             (15U)
+#else
+#define LED_PIN             (12U)
+#endif
 #define LED_PIN_MASK        (1UL << LED_PIN)
 
 // SPI pin definitions
@@ -114,6 +120,7 @@ static void SPI_CS_Deselect(void);
 static uint8_t SPI_TransmitReceive(uint8_t data);
 static int SPIFlash_WriteEnable(void);
 static void SPIFlash_ReadJEDEC_ID(uint8_t *buf);
+static void SPIFlash_PowerOn(int enable);
 static void delay(uint32_t count);
 
 // Stack top (defined in linker script)
@@ -155,10 +162,10 @@ static void LED_Init(void) {
     // Enable GPIOB clock
     RCC_AHB2ENR |= RCC_AHB2ENR_GPIOBEN;
     
-    // Configure PB15 as output (Mode = 01)
+    // Configure LED_PIN as output (Mode = 01)
     GPIOB_MODER &= ~(3UL << (LED_PIN * 2));
     GPIOB_MODER |= (1UL << (LED_PIN * 2));
-    
+
     // Configure as push-pull (default, 0)
     GPIOB_OTYPER &= ~(1UL << LED_PIN);
     
@@ -349,6 +356,34 @@ static void SPIFlash_ReadJEDEC_ID(uint8_t *buf) {
 }
 
 ////////////////////////////////////////////////////////////
+// SPI Flash Power Control
+////////////////////////////////////////////////////////////
+
+/// @brief Control power to the SPI Flash via PA4
+/// @param enable 1 to power on (PA4 high), 0 to power off (PA4 low)
+static void SPIFlash_PowerOn(int enable) {
+    // Ensure GPIOA clock is enabled
+    RCC_AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
+    
+    // Configure PA4 as output if not already
+    GPIOA_MODER &= ~(3UL << (4 * 2));       // Clear mode bits
+    GPIOA_MODER |= (1UL << (4 * 2));        // Set as output (01)
+    
+    // Configure as push-pull (default, 0)
+    GPIOA_OTYPER &= ~(1UL << 4);
+    
+    // Configure with no pull-up/pull-down (00)
+    GPIOA_PUPDR &= ~(3UL << (4 * 2));
+    
+    // Set PA4 high or low based on parameter
+    if (enable) {
+        GPIOA_BSRR = (1UL << 4);            // Set high (power on)
+    } else {
+        GPIOA_BSRR = (1UL << (4 + 16));     // Set low (power off)
+    }
+}
+
+////////////////////////////////////////////////////////////
 // STM32 External Loader Flash Functions
 ////////////////////////////////////////////////////////////
 
@@ -463,6 +498,11 @@ int Init(void) {
     // Initialize SPI
     SPI_Init();
 
+#ifndef RUN_ON_NUCLEO_WL55JC
+    // Power on the SPI Flash
+    SPIFlash_PowerOn(1);
+#endif
+
     // Return LOADER_OK
     return LOADER_OK;
 }
@@ -510,19 +550,24 @@ int main(void) {
     
     // Initialize SPI
     SPI_Init();
+
+    // Power on the SPI Flash
+#ifndef RUN_ON_NUCLEO_WL55JC
+    SPIFlash_PowerOn(1);
+#endif
     
     // Infinite loop
     while (1) {
         // Read JEDEC ID (manufacturer, memory type, capacity)
         SPIFlash_ReadJEDEC_ID(jedecID);
         
-        // Turn on LED (PB15)
+        // Turn on LED
         GPIOB_BSRR = (1UL << LED_PIN);
-        delay(500000);
+        delay(50000);
         
-        // Turn off LED (PB15)
+        // Turn off LED
         GPIOB_BSRR = (1UL << (LED_PIN + 16));
-        delay(500000);
+        delay(50000);
     }
     
     // Should never reach here

@@ -8,6 +8,7 @@ This project implements an external SPI Flash loader for STM32CubeProgrammer to 
 - Full implementation of STM32 external loader interface
 - SPI communication with external Flash chip
 - Support for reading, writing, sector erase, and mass erase operations
+- Power control for the SPI Flash via PA4
 - Status indication via LED connected to PB15
 - Compatible with STM32CubeProgrammer
 
@@ -23,6 +24,7 @@ This project implements an external SPI Flash loader for STM32CubeProgrammer to 
 - STM32WL55JC microcontroller
 - LED connected to PB15
 - SPI Flash connected to:
+  - PA4: Power control (high = on, low = off)
   - PA5: SCK (SPI1_SCK)
   - PA6: MISO (SPI1_MISO)
   - PA7: MOSI (SPI1_MOSI) 
@@ -86,7 +88,12 @@ STM32_Programmer_CLI -c port=SWD -w Infersens_iFlow1000_SPIFlash_ExtLoader.bin 0
    - `SectorErase()` - Erases sectors (4KB blocks)
    - `MassErase()` - Erases the entire chip
 
-2. All code runs from RAM:
+2. Additionally, it provides power control for the SPI Flash:
+   - `SPIFlash_PowerOn(1)` - Powers on the flash chip (PA4 set high)
+   - `SPIFlash_PowerOn(0)` - Powers off the flash chip (PA4 set low)
+   - Power is enabled at initialization before SPI communication
+
+3. All code runs from RAM:
    - Vector table is placed at address 0x20000000
    - All functions execute from RAM
    - No dependency on Flash memory
