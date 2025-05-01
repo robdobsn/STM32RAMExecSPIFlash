@@ -4,13 +4,17 @@
 ifeq ($(OS),Windows_NT)
   # Windows-specific settings
   PROGRAMMER = "C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe"
+  EXT_LOADER_FOLDER = "C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\ExternalLoader"
   RM = del /Q
   MKDIR = mkdir
+  COPY = copy
 else
   # Linux/Unix-specific settings
   PROGRAMMER = STM32_Programmer_CLI
+  EXT_LOADER_FOLDER = STM32CubeProgrammer/bin/ExternalLoader
   RM = rm -f
   MKDIR = mkdir -p
+  COPY = cp
 endif
 
 # Toolchain definitions
@@ -21,7 +25,7 @@ OBJDUMP = arm-none-eabi-objdump
 SIZE = arm-none-eabi-size
 
 # Project name
-PROJECT = ram_only_blink
+PROJECT = Infersens_iFlow1000_SPIFlash_ExtLoader
 
 # MCU flags
 MCU = -mcpu=cortex-m4 -mthumb -mfloat-abi=soft
@@ -37,7 +41,11 @@ SRC = main.c Dev_Inf.c
 OBJ = main.o Dev_Inf.o
 
 # Build target
-all: $(PROJECT).elf
+all: $(PROJECT).elf $(PROJECT).stldr
+
+# Create STM32 loader file
+$(PROJECT).stldr: $(PROJECT).elf
+	$(COPY) $(PROJECT).elf $(PROJECT).stldr
 
 # Link object files to create elf file
 $(PROJECT).elf: $(OBJ)
@@ -50,7 +58,7 @@ $(PROJECT).elf: $(OBJ)
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
-	$(RM) $(OBJ) $(PROJECT).elf $(PROJECT).hex $(PROJECT).bin $(PROJECT).dump
+	$(RM) $(OBJ) $(PROJECT).elf $(PROJECT).hex $(PROJECT).bin $(PROJECT).dump $(PROJECT).stldr
 
 # Flash to RAM and start execution from RAM - only option now
 flash:

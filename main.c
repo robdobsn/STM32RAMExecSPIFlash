@@ -449,6 +449,24 @@ int MassErase(void)
     return LOADER_OK;
 }
 
+/// @brief Init function
+int Init(void) {
+
+    // Set the vector table to our RAM-based table
+    SCB_VTOR = (uint32_t)g_pfnVectors;
+
+    // Zero fill the BSS segment
+    for (uint32_t *dest = &_sbss; dest < &_ebss; ) {
+        *dest++ = 0;
+    }
+
+    // Initialize SPI
+    SPI_Init();
+
+    // Return LOADER_OK
+    return LOADER_OK;
+}
+
 ////////////////////////////////////////////////////////////
 // Utility Functions
 ////////////////////////////////////////////////////////////
@@ -475,20 +493,17 @@ void Reset_Handler(void) {
         *dest++ = 0;
     }
     
-    // Jump to Init
-    Init();
+    // Jump to main
+    main();
     
     // Should never reach here
     while (1) {}
 }
 
-/// @brief Init function
-int Init(void) {
+/// @brief main function
+int main(void) {
     // Storage for JEDEC ID
     uint8_t jedecID[3] = {0};
-
-    // Set vector table location to RAM (0x20000000)
-    SCB_VTOR = 0x20000000;
 
     // Initialize LED
     LED_Init();

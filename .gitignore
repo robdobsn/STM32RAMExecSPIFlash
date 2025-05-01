@@ -6,6 +6,7 @@
 *.bin
 *.map
 *.list
+*.stldr
 
 # Debug files
 *.dmp
