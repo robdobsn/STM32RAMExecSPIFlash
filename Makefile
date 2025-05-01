@@ -1,4 +1,17 @@
-# Makefile for minimal STM32WL55JC LED blink example
+# Makefile for minimal STM32WL55JC LED blink example - Pure RAM Execution
+
+# Detect operating system
+ifeq ($(OS),Windows_NT)
+  # Windows-specific settings
+  PROGRAMMER = "C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe"
+  RM = del /Q
+  MKDIR = mkdir
+else
+  # Linux/Unix-specific settings
+  PROGRAMMER = STM32_Programmer_CLI
+  RM = rm -f
+  MKDIR = mkdir -p
+endif
 
 # Toolchain definitions
 CC = arm-none-eabi-gcc
@@ -8,7 +21,7 @@ OBJDUMP = arm-none-eabi-objdump
 SIZE = arm-none-eabi-size
 
 # Project name
-PROJECT = minimal_blink
+PROJECT = ram_only_blink
 
 # MCU flags
 MCU = -mcpu=cortex-m4 -mthumb -mfloat-abi=soft
@@ -17,7 +30,7 @@ MCU = -mcpu=cortex-m4 -mthumb -mfloat-abi=soft
 CFLAGS = $(MCU) -Wall -g -Os -ffunction-sections -fdata-sections
 
 # Linker flags
-LDFLAGS = $(MCU) -specs=nano.specs -specs=nosys.specs -Wl,--gc-sections -T stm32wl55jc_flash.ld
+LDFLAGS = $(MCU) -specs=nano.specs -specs=nosys.specs -Wl,--gc-sections -T stm32wl55jc_ram.ld
 
 # Source files
 SRCS = main.c
@@ -31,7 +44,7 @@ all: $(PROJECT).elf $(PROJECT).bin $(PROJECT).hex size
 %.o: %.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
-$(PROJECT).elf: $(OBJS) stm32wl55jc_flash.ld
+$(PROJECT).elf: $(OBJS) stm32wl55jc_ram.ld
 	$(LD) $(LDFLAGS) $(OBJS) -o $@
 
 $(PROJECT).hex: $(PROJECT).elf
@@ -44,9 +57,14 @@ size: $(PROJECT).elf
 	$(SIZE) $(PROJECT).elf
 
 clean:
-	rm -f $(OBJS) $(PROJECT).elf $(PROJECT).hex $(PROJECT).bin
+	$(RM) $(OBJS) $(PROJECT).elf $(PROJECT).hex $(PROJECT).bin $(PROJECT).dump
 
+# Flash to RAM and start execution from RAM - only option now
 flash:
-	"C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe" -c port=SWD -w $(PROJECT).bin 0x08000000 -s 0x08000000
+	$(PROGRAMMER) -c port=SWD -w $(PROJECT).bin 0x20000000 -s 0x20000000 --skip
 
-.PHONY: all clean size flash 
+# Dump the binary for debugging
+dump:
+	$(OBJDUMP) -D $(PROJECT).elf > $(PROJECT).dump
+
+.PHONY: all clean size flash dump 

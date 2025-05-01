@@ -1,6 +1,5 @@
 /**
- * Minimal STM32WL55JC LED blink example
- * Based on working code from iFlow1000FW2 project
+ * Minimal STM32WL55JC LED blink example - Pure RAM Execution
  */
 
 // We'll use standard register definitions
@@ -19,6 +18,10 @@
 #define GPIOB_ODR           (*(volatile uint32_t *)(GPIOB_BASE + 0x14))
 #define GPIOB_BSRR          (*(volatile uint32_t *)(GPIOB_BASE + 0x18))
 
+// SCB (System Control Block) register for vector table relocation
+#define SCB_BASE            (0xE000ED00UL)
+#define SCB_VTOR            (*(volatile uint32_t *)(SCB_BASE + 0x08))
+
 // LED is on PB15
 #define LED_PIN             (15U)
 #define LED_PIN_MASK        (1UL << LED_PIN)
@@ -26,24 +29,22 @@
 // No operation instruction
 #define __NOP()             __asm volatile ("nop")
 
-// Forward declaration
+// Forward declarations
 void Reset_Handler(void);
+int main(void);
 
 // Stack top (defined in linker script)
 extern uint32_t _estack;
 
 // Memory section symbols from linker script
-extern uint32_t _sidata;    // Start of initialized data in flash
-extern uint32_t _sdata;     // Start of data in RAM
-extern uint32_t _edata;     // End of data in RAM
 extern uint32_t _sbss;      // Start of BSS
 extern uint32_t _ebss;      // End of BSS
 
-// Vector table
-__attribute__((section(".isr_vector")))
+// Vector table - this is placed at the beginning of RAM
+__attribute__((section(".vectors")))
 void (*const g_pfnVectors[])(void) = {
     (void (*)(void))&_estack,  // Initial stack pointer value
-    Reset_Handler,             // Reset vector - must be defined
+    Reset_Handler,             // Reset handler points to our Reset_Handler
     0,                         // NMI_Handler
     0,                         // HardFault_Handler
     0,                         // MemManage_Handler
@@ -92,13 +93,32 @@ static void delay(uint32_t count) {
 }
 
 /**
+ * Reset handler - this is our real entry point
+ */
+void Reset_Handler(void) {
+    // Set the vector table to our RAM-based table
+    SCB_VTOR = (uint32_t)g_pfnVectors;
+    
+    // Zero fill the BSS segment
+    for (uint32_t *dest = &_sbss; dest < &_ebss; ) {
+        *dest++ = 0;
+    }
+    
+    // Jump to main program
+    main();
+    
+    // Should never reach here
+    while (1) {}
+}
+
+/**
  * Main function
  */
 int main(void) {
     // Initialize LED GPIO
     LED_Init();
     
-    // Main loop
+    // Main loop - this runs from RAM
     while (1) {
         // LED ON
         GPIOB_BSRR = LED_PIN_MASK;
@@ -115,28 +135,4 @@ int main(void) {
     
     // Never reached
     return 0;
-}
-
-/**
- * Reset handler - this is the entry point
- */
-void Reset_Handler(void) {
-    uint32_t *src, *dest;
-    
-    // Copy the data segment initializers from flash to SRAM
-    src = &_sidata;
-    for (dest = &_sdata; dest < &_edata; ) {
-        *dest++ = *src++;
-    }
-    
-    // Zero fill the BSS segment
-    for (dest = &_sbss; dest < &_ebss; ) {
-        *dest++ = 0;
-    }
-    
-    // Call main
-    main();
-    
-    // Should never reach here
-    while (1) {}
 } 
