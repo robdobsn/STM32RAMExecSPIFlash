@@ -1,119 +1,88 @@
-# STM32WL55JC Dual-Mode Execution Example
+# STM32WL55JC Pure RAM Execution Example
 
-This project demonstrates running code on an STM32WL55JC Nucleo board from either Flash (default) or RAM.
-The example simply blinks the LED connected to PB15.
+This project demonstrates running code on an STM32WL55JC microcontroller entirely from RAM, without using Flash memory at all. The example blinks an LED connected to PB15 and reads the JEDEC ID from an external SPI Flash memory.
+
+## Features
+
+- 100% RAM execution - no dependency on Flash memory
+- LED blinking on PB15
+- SPI communication with external Flash chip
+- Reads JEDEC ID (manufacturer, memory type, capacity) from SPI Flash
+- Minimal code size optimized for RAM usage
 
 ## Project Structure
 
-- `main.c` - Main application code (can run from Flash or RAM)
-- `startup_ram.c` - Startup code that initializes the system
-- `stm32wl55jc_ram.ld` - Linker script with dual-mode support
-- `Makefile` - Build system supporting both execution modes
-- `stm32wl55xx.h` - Header with register definitions
+- `main.c` - Application code with direct register access
+- `stm32wl55jc_ram.ld` - Linker script for pure RAM execution
+- `Makefile` - Build system with flash command for loading to RAM
+
+## Hardware Configuration
+
+- STM32WL55JC microcontroller
+- LED connected to PB15
+- SPI Flash connected to:
+  - PA5: SCK (SPI1_SCK)
+  - PA6: MISO (SPI1_MISO)
+  - PA7: MOSI (SPI1_MOSI) 
+  - PB5: CS (GPIO output)
 
 ## Build Instructions
 
 1. Ensure you have the ARM GCC toolchain installed (`arm-none-eabi-gcc` and related tools)
 
-2. Build for Flash execution (default):
+2. Build the project:
    ```bash
    make
    ```
 
-3. Build for RAM execution:
-   ```bash
-   make RUN_MODE=RAM
-   ```
+3. The output files will be:
+   - `ram_only_blink.elf` - ELF file with debug symbols
+   - `ram_only_blink.bin` - Binary file for loading into RAM
+   - `ram_only_blink.hex` - HEX file (alternative format)
 
-4. The output files will be:
-   - `stm32_blink.elf` / `stm32_blink_ram.elf` - ELF file with debug symbols
-   - `stm32_blink.bin` / `stm32_blink_ram.bin` - Binary file for flashing
-   - `stm32_blink.hex` / `stm32_blink_ram.hex` - HEX file for flashing
-
-## How to Flash and Run
-
-You can use STM32CubeProgrammer, OpenOCD, or any other compatible tool to load the binary.
+## Loading and Running
 
 ### Using the Makefile (recommended)
 
 ```bash
-# Flash the binary (automatically uses the correct memory location based on build mode)
+# Load the binary into RAM and start execution
 make flash
-# OR specifically for RAM mode
-make flash RUN_MODE=RAM
 ```
+
+This command uses STM32CubeProgrammer to:
+1. Load the binary to RAM at address 0x20000000
+2. Set the PC register to start execution at 0x20000000
 
 ### Using STM32CubeProgrammer (CLI) manually
 
-For Flash mode:
 ```bash
-STM32_Programmer_CLI -c port=SWD -w stm32_blink.bin 0x08000000 -s 0x08000000
-```
-
-For RAM mode:
-```bash
-STM32_Programmer_CLI -c port=SWD -w stm32_blink_ram.bin 0x20000000 -s 0x20000000
-```
-
-### Using OpenOCD
-
-For Flash mode:
-```bash
-# Connect to the board
-openocd -f board/st_nucleo_wl55jc.cfg
-
-# In another terminal
-telnet localhost 4444
-
-# In the OpenOCD telnet session
-> halt
-> flash write_image erase stm32_blink.bin 0x08000000
-> reset
-```
-
-For RAM mode:
-```bash
-# Connect to the board
-openocd -f board/st_nucleo_wl55jc.cfg
-
-# In another terminal
-telnet localhost 4444
-
-# In the OpenOCD telnet session
-> halt
-> load_image stm32_blink_ram.bin 0x20000000
-> reg pc 0x20000000
-> resume
+STM32_Programmer_CLI -c port=SWD -w ram_only_blink.bin 0x20000000 -s 0x20000000
 ```
 
 ## How It Works
 
-### Flash Mode
-1. Code and constant data are placed in Flash
-2. The standard vector table is used from Flash
-3. Variable data is copied from Flash to RAM during startup
-
-### RAM Mode
-1. The vector table is placed in RAM
+1. Vector table is placed at the beginning of RAM (address 0x20000000)
 2. All code and data are placed in RAM
-3. The startup code redirects execution to RAM using the VTOR register
+3. The reset handler:
+   - Sets VTOR register to point to the RAM vector table
+   - Initializes the BSS section
+   - Jumps to main
+4. Main function:
+   - Initializes GPIO for LED
+   - Initializes SPI1 for Flash communication
+   - Enters an infinite loop that blinks the LED and reads SPI Flash ID
 
-## Hardware Configuration
+## RAM Memory Layout
 
-- STM32WL55JC Nucleo board
-- LED on PB15 (on-board LED)
+- Start Address: 0x20000000
+- Vector Table: At the beginning of RAM
+- Code (.text): Follows the vector table
+- Data (.data): After code section
+- BSS (.bss): Zeroed variables
+- Stack: Grows down from top of RAM (0x20010000)
 
 ## Troubleshooting
 
-- If RAM execution doesn't work, make sure your debugger is properly configured
-- For STM32CubeProgrammer, ensure you're using the correct `-s` parameter to set the PC register
-- Some debuggers may reset the device after programming, which might cause RAM content to be lost
-
-## Memory Usage
-
-- Flash memory is not used for code execution
-- SRAM1 (64KB) is used for:
-  - Vector table
-  - Code
-  - Data
-  - Stack (4KB) 
+- If execution doesn't start, make sure your debugger is properly setting the PC register
+- If SPI communication fails, check your hardware connections
+- Some debuggers may disconnect after loading, which is expected behavior 
