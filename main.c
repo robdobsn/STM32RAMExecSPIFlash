@@ -1,12 +1,22 @@
-/**
- * Minimal STM32WL55JC LED blink example - Pure RAM Execution
- */
+////////////////////////////////////////////////////////////
+// STM32WL55JC SPI Flash Loader - Pure RAM Execution
+// Copyright (C) Infersens 2025
+// Nazim Robbani / Rob Dobson
+////////////////////////////////////////////////////////////
 
 // We'll use standard register definitions
 #include <stdint.h>
 
+////////////////////////////////////////////////////////////
+// Definitions
+////////////////////////////////////////////////////////////
+
 // Define IO macro since we're not using HAL
 #define __IO volatile
+
+// Loader return codes
+#define LOADER_OK 1
+#define LOADER_FAIL 0
 
 // Define register addresses directly
 #define RCC_BASE            (0x58000000UL)
@@ -62,7 +72,7 @@
 #define SCB_BASE            (0xE000ED00UL)
 #define SCB_VTOR            (*(volatile uint32_t *)(SCB_BASE + 0x08))
 
-// LED is on PB15
+// LED is on PB15 on STM32WL55JC Nucleo
 #define LED_PIN             (15U)
 #define LED_PIN_MASK        (1UL << LED_PIN)
 
@@ -79,7 +89,22 @@
 // No operation instruction
 #define __NOP()             __asm volatile ("nop")
 
-// Forward declarations
+// Op-codes for MX25R1635FZUIL0 / 16MBit Flash
+#define CMD_READ        0x03
+#define CMD_FAST_READ   0x0B
+#define CMD_WRITE_EN    0x06
+#define CMD_PAGE_PROG   0x02
+#define CMD_SECTOR_ER   0x20  // 4 KB
+#define CMD_CHIP_ER     0xC7
+#define CMD_RDSR        0x05
+#define CMD_CHIP_ID     0x9F
+#define MX_CMD_RSTEN    0x66
+#define MX_CMD_RST      0x99
+
+////////////////////////////////////////////////////////////
+// Forward declarations & externals
+////////////////////////////////////////////////////////////
+
 void Reset_Handler(void);
 int main(void);
 static void LED_Init(void);
@@ -87,7 +112,6 @@ static void SPI_Init(void);
 static void SPI_CS_Select(void);
 static void SPI_CS_Deselect(void);
 static uint8_t SPI_TransmitReceive(uint8_t data);
-static void SPI_ReadJEDEC_ID(uint8_t *buf);
 static void delay(uint32_t count);
 
 // Stack top (defined in linker script)
@@ -97,7 +121,10 @@ extern uint32_t _estack;
 extern uint32_t _sbss;      // Start of BSS
 extern uint32_t _ebss;      // End of BSS
 
+////////////////////////////////////////////////////////////
 // Vector table - this is placed at the beginning of RAM
+////////////////////////////////////////////////////////////
+
 typedef void (*vector_table_entry_t)(void);
 __attribute__((section(".vectors")))
 const vector_table_entry_t g_pfnVectors[] = {
@@ -117,9 +144,11 @@ const vector_table_entry_t g_pfnVectors[] = {
     // External interrupts are all NULL
 };
 
-/**
- * Initialize LED GPIO
- */
+////////////////////////////////////////////////////////////
+// LED Functions
+////////////////////////////////////////////////////////////
+
+/// @brief Initialize LED GPIO
 static void LED_Init(void) {
     // Enable GPIOB clock
     RCC_AHB2ENR |= RCC_AHB2ENR_GPIOBEN;
@@ -141,9 +170,11 @@ static void LED_Init(void) {
     GPIOB_BSRR = (1UL << (LED_PIN + 16)); // Reset bit
 }
 
-/**
- * Initialize SPI1 with GPIO pins
- */
+////////////////////////////////////////////////////////////
+// SPI Functions
+////////////////////////////////////////////////////////////
+
+/// @brief Initialize SPI1 with GPIO pins
 static void SPI_Init(void) {
     // Enable GPIOA and GPIOB clocks
     RCC_AHB2ENR |= (RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN);
@@ -205,66 +236,230 @@ static void SPI_Init(void) {
     SPI1_CR1 |= SPI_CR1_SPE;
 }
 
-/**
- * Set CS pin low (active)
- */
+/// @brief Set CS pin low (active)
 static void SPI_CS_Select(void) {
     GPIOB_BSRR = (1UL << (SPI_CS_PIN + 16)); // Reset bit (CS LOW)
 }
 
-/**
- * Set CS pin high (inactive)
- */
+/// @brief Set CS pin high (inactive)
 static void SPI_CS_Deselect(void) {
     GPIOB_BSRR = (1UL << SPI_CS_PIN); // Set bit (CS HIGH)
 }
 
-/**
- * Transmit and receive one byte over SPI
- */
+/// @brief Transmit and receive one byte over SPI
 static uint8_t SPI_TransmitReceive(uint8_t data) {
     // Wait until TXE flag is set (Transmit buffer empty)
     while (!(SPI1_SR & SPI_SR_TXE)) {}
-    
     // Send data
     *(volatile uint8_t *)&SPI1_DR = data;
-    
     // Wait until RXNE flag is set (Receive buffer not empty)
     while (!(SPI1_SR & SPI_SR_RXNE)) {}
-    
     // Return received data
     return *(volatile uint8_t *)&SPI1_DR;
 }
 
-/**
- * Read JEDEC ID (3 bytes) from Flash
- */
-static void SPI_ReadJEDEC_ID(uint8_t *buf) {
+////////////////////////////////////////////////////////////
+// Flash Functions
+////////////////////////////////////////////////////////////
+
+/// @brief Wait until the Flash is not busy
+/// @return LOADER_OK on success, LOADER_FAIL on error
+static int SPIFlash_WaitWhileBusy(void)
+{
+    uint8_t status = 0;
+    do {
+        SPI_CS_Select();
+        // Send RDSR command (0x05)
+        SPI_TransmitReceive(CMD_RDSR);
+        // Read status register
+        status = SPI_TransmitReceive(0xFF);
+        SPI_CS_Deselect();
+    } while (status & 0x01);  // WIP = bit0
+    return LOADER_OK;
+}
+/// @brief Enable write operations on the flash
+/// @return LOADER_OK on success, LOADER_FAIL on error
+static int SPIFlash_WriteEnable(void)
+{
     SPI_CS_Select();
-    
+    // Send write enable command (0x06)
+    SPI_TransmitReceive(CMD_WRITE_EN);
+    SPI_CS_Deselect();
+    return LOADER_OK;
+}
+
+/// @brief Read the status register
+/// @return Status register value
+static uint8_t SPIFlash_ReadStatus(void)
+{
+    uint8_t status = 0;
+    SPI_CS_Select();
+    // Send RDSR command (0x05)
+    SPI_TransmitReceive(CMD_RDSR);
+    // Read status
+    status = SPI_TransmitReceive(0xFF);
+    SPI_CS_Deselect();
+    return status;
+}
+
+/// @brief Clear write protection
+/// @return LOADER_OK on success, LOADER_FAIL on error
+static int SPIFlash_ClearProtection(void) {
+    if (SPIFlash_WriteEnable() != LOADER_OK)
+        return LOADER_FAIL;
+    SPI_CS_Select();
+    // Write status register command (0x01)
+    SPI_TransmitReceive(0x01);
+    // Clear all protection bits
+    SPI_TransmitReceive(0x00);
+    SPI_CS_Deselect();
+    return SPIFlash_WaitWhileBusy();
+}
+
+/// @brief Reset Macronix chip
+/// @return LOADER_OK on success, LOADER_FAIL on error
+static int SPIFlash_MxChipReset(void)
+{
+    SPI_CS_Select();
+    // Send reset enable command
+    SPI_TransmitReceive(MX_CMD_RSTEN);
+    SPI_CS_Deselect();
+    SPI_CS_Select();
+    // Send reset command
+    SPI_TransmitReceive(MX_CMD_RST);
+    SPI_CS_Deselect();
+    // Delay for reset to complete (approx 1ms)
+    delay(50000);
+    return LOADER_OK;
+}
+
+/// @brief Write data to flash, handling page boundaries
+/// @param Address Flash address to write to
+/// @param Size Number of bytes to write
+/// @param buffer Data to write
+/// @return LOADER_OK on success, LOADER_FAIL on error
+static int SPIFlash_Write(uint32_t Address, uint32_t Size, uint8_t *buffer)
+{
+    while (Size > 0)
+    {
+        uint32_t page_offset = Address & 0xFF;
+        uint32_t chunk = 256 - page_offset;         // bytes left in this page
+        if (chunk > Size) 
+            chunk = Size;
+        if (SPIFlash_WriteEnable() != LOADER_OK) 
+            return LOADER_FAIL;
+        SPI_CS_Select();
+        // Send page program command and 3-byte address
+        SPI_TransmitReceive(CMD_PAGE_PROG);
+        SPI_TransmitReceive((uint8_t)(Address >> 16));
+        SPI_TransmitReceive((uint8_t)(Address >> 8));
+        SPI_TransmitReceive((uint8_t)(Address));
+        // Send data
+        for (uint32_t i = 0; i < chunk; i++) {
+            SPI_TransmitReceive(buffer[i]);
+        }
+        SPI_CS_Deselect();
+        if (SPIFlash_WaitWhileBusy() != LOADER_OK) 
+            return LOADER_FAIL;
+        Address += chunk;
+        buffer  += chunk;
+        Size    -= chunk;
+    }
+    return LOADER_OK;
+}
+
+/// @brief Read data from flash
+/// @param Address Flash address to read from
+/// @param Size Number of bytes to read
+/// @param Buffer Buffer to store read data
+/// @return LOADER_OK on success, LOADER_FAIL on error
+static int SPIFlash_Read(uint32_t Address, uint32_t Size, uint8_t *Buffer)
+{
+    SPI_CS_Select();
+    // Send read command and 3-byte address
+    SPI_TransmitReceive(CMD_READ);
+    SPI_TransmitReceive((uint8_t)(Address >> 16));
+    SPI_TransmitReceive((uint8_t)(Address >> 8));
+    SPI_TransmitReceive((uint8_t)(Address));    
+    // Read data
+    for (uint32_t i = 0; i < Size; i++) {
+        Buffer[i] = SPI_TransmitReceive(0xFF);
+    }
+    SPI_CS_Deselect();
+    return LOADER_OK;
+}
+
+/// @brief Erase sectors covering the specified address range
+/// @param EraseStartAddress Start address (will be aligned to 4KB boundary)
+/// @param EraseEndAddress End address (will be aligned to 4KB boundary)
+/// @return LOADER_OK on success, LOADER_FAIL on error
+static int SPIFlash_SectorErase(uint32_t EraseStartAddress, uint32_t EraseEndAddress)
+{
+    // Align addresses to 4 KB boundaries
+    EraseStartAddress &= ~(0xFFF);
+    EraseEndAddress   = (EraseEndAddress + 0xFFF) & ~(0xFFF);
+    for (uint32_t addr = EraseStartAddress; addr < EraseEndAddress; addr += 0x1000)
+    {
+        if (SPIFlash_WriteEnable() != LOADER_OK) 
+            return LOADER_FAIL;
+        SPI_CS_Select();
+        // Send sector erase command and 3-byte address
+        SPI_TransmitReceive(CMD_SECTOR_ER);
+        SPI_TransmitReceive((uint8_t)(addr >> 16));
+        SPI_TransmitReceive((uint8_t)(addr >> 8));
+        SPI_TransmitReceive((uint8_t)(addr));
+        SPI_CS_Deselect();
+        if (SPIFlash_WaitWhileBusy() != LOADER_OK) 
+            return LOADER_FAIL;
+    }
+    return LOADER_OK;
+}
+
+/// @brief Erase the entire flash chip
+/// @return LOADER_OK on success, LOADER_FAIL on error
+static int SPIFlash_MassErase(void)
+{
+    if (SPIFlash_WriteEnable() != LOADER_OK) 
+        return LOADER_FAIL;
+    SPI_CS_Select();
+    // Send chip erase command
+    SPI_TransmitReceive(CMD_CHIP_ER);
+    SPI_CS_Deselect();
+    if (SPIFlash_WaitWhileBusy() != LOADER_OK) 
+        return LOADER_FAIL;
+    return LOADER_OK;
+}
+
+/// @brief Read JEDEC ID (3 bytes) from Flash
+/// @param buf Buffer to store JEDEC ID
+static void SPIFlash_ReadJEDEC_ID(uint8_t *buf) {
+    SPI_CS_Select();
     // Send 0x9F command (Read JEDEC ID)
     SPI_TransmitReceive(0x9F);
-    
     // Read 3 bytes of data
     buf[0] = SPI_TransmitReceive(0xFF); // Manufacturer ID
     buf[1] = SPI_TransmitReceive(0xFF); // Memory Type
     buf[2] = SPI_TransmitReceive(0xFF); // Capacity
-    
     SPI_CS_Deselect();
 }
 
-/**
- * Simple delay function
- */
+////////////////////////////////////////////////////////////
+// Utility Functions
+////////////////////////////////////////////////////////////
+
+/// @brief Simple delay function
+/// @param count Number of cycles to delay
 static void delay(uint32_t count) {
     for (volatile uint32_t i = 0; i < count; i++) {
         __NOP();
     }
 }
 
-/**
- * Reset handler - this is our real entry point
- */
+////////////////////////////////////////////////////////////
+// Main Functions
+////////////////////////////////////////////////////////////
+
+/// @brief Reset handler - this is our real entry point
 void Reset_Handler(void) {
     // Set the vector table to our RAM-based table
     SCB_VTOR = (uint32_t)g_pfnVectors;
@@ -281,9 +476,7 @@ void Reset_Handler(void) {
     while (1) {}
 }
 
-/**
- * Main function
- */
+/// @brief Main function
 int main(void) {
     // Storage for JEDEC ID
     uint8_t jedecID[3] = {0};
@@ -300,16 +493,16 @@ int main(void) {
         GPIOB_BSRR = LED_PIN_MASK;
         
         // Read JEDEC ID
-        SPI_ReadJEDEC_ID(jedecID);
+        SPIFlash_ReadJEDEC_ID(jedecID);
         
         // Delay
-        delay(1000000);
+        delay(100000);
         
         // LED OFF
         GPIOB_BSRR = (LED_PIN_MASK << 16);
         
         // Delay
-        delay(1000000);
+        delay(100000);
     }
     
     // Never reached

@@ -61,7 +61,7 @@ clean:
 
 # Flash to RAM and start execution from RAM - only option now
 flash:
-	$(PROGRAMMER) -c port=SWD -w $(PROJECT).bin 0x20000000 -s 0x20000000 --skip
+	$(PROGRAMMER) -c port=SWD -w $(PROJECT).bin 0x20000000 -s 0x20000000
 
 # Dump the binary for debugging
 dump:
