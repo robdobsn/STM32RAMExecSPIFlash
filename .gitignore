@@ -1,0 +1,36 @@
+# Build outputs
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+
+# Debug files
+*.dmp
+*.su
+*.iex
+
+# STM32CubeProgrammer logs/outputs
+*.log
+
+# Editor and IDE files
+.vscode/
+.settings/
+.project
+.cproject
+.idea/
+*.swp
+*~
+*.bak
+
+# Generated directories
+build/
+debug/
+release/
+output/
+
+# System files
+.DS_Store
+Thumbs.db 
