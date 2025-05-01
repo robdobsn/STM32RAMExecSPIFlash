@@ -19,7 +19,7 @@
 #define  SDRAM        9
 #define  I2C_EEPROM   10
 
-#define SECTOR_NUM    10   // Max number of distinct sector‐types
+#define SECTOR_NUM    10   // Max number of distinct sector‐types - MUST be 10
 
 struct DeviceSectors {
     unsigned long SectorNum;    // Number of sectors of this size

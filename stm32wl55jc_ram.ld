@@ -3,6 +3,9 @@
 /* Entry point */
 ENTRY(Reset_Handler)
 
+/* Program header sections */
+PHDRS {Loader PT_LOAD ; SgInfo PT_LOAD ; }
+
 /* Memory definitions */
 MEMORY
 {
@@ -21,7 +24,7 @@ SECTIONS
     . = ALIGN(4);
     KEEP(*(.vectors))    /* Main vector table */
     . = ALIGN(4);
-  } >RAM
+  } >RAM :Loader
   
   /* Code section in RAM */
   .text :
@@ -32,7 +35,7 @@ SECTIONS
     *(.rodata)           /* Read-only data */
     *(.rodata*)
     . = ALIGN(4);
-  } >RAM
+  } >RAM :Loader
 
   /* Data section in RAM */
   .data :
@@ -43,7 +46,7 @@ SECTIONS
     *(.data*)
     . = ALIGN(4);
     _edata = .;
-  } >RAM
+  } >RAM :Loader
 
   /* BSS section in RAM */
   .bss :
@@ -55,7 +58,15 @@ SECTIONS
     *(COMMON)
     . = ALIGN(4);
     _ebss = .;
-  } >RAM
+  } >RAM :Loader
+
+  .Dev_Info :
+  {
+  	__Dev_info_START = .;
+  	*(.Dev_info*)
+  	KEEP(*(.Dev_info))
+  	__Dev_info_END = .;
+  } >RAM :SgInfo
 
   /* Discard anything from standard libraries we don't need */
   /DISCARD/ :

@@ -11,6 +11,7 @@
 *.dmp
 *.su
 *.iex
+*.readelf
 
 # STM32CubeProgrammer logs/outputs
 *.log

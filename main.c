@@ -106,12 +106,14 @@
 ////////////////////////////////////////////////////////////
 
 void Reset_Handler(void);
-int main(void);
+int Init(void);
 static void LED_Init(void);
 static void SPI_Init(void);
 static void SPI_CS_Select(void);
 static void SPI_CS_Deselect(void);
 static uint8_t SPI_TransmitReceive(uint8_t data);
+static int SPIFlash_WriteEnable(void);
+static void SPIFlash_ReadJEDEC_ID(uint8_t *buf);
 static void delay(uint32_t count);
 
 // Stack top (defined in linker script)
@@ -346,7 +348,6 @@ static void SPIFlash_ReadJEDEC_ID(uint8_t *buf) {
     SPI_CS_Deselect();
 }
 
-
 ////////////////////////////////////////////////////////////
 // STM32 External Loader Flash Functions
 ////////////////////////////////////////////////////////////
@@ -356,7 +357,7 @@ static void SPIFlash_ReadJEDEC_ID(uint8_t *buf) {
 /// @param Size Number of bytes to write
 /// @param buffer Data to write
 /// @return LOADER_OK on success, LOADER_FAIL on error
-static int Write(uint32_t Address, uint32_t Size, uint8_t *buffer)
+int Write(uint32_t Address, uint32_t Size, uint8_t *buffer)
 {
     while (Size > 0)
     {
@@ -391,14 +392,14 @@ static int Write(uint32_t Address, uint32_t Size, uint8_t *buffer)
 /// @param Size Number of bytes to read
 /// @param Buffer Buffer to store read data
 /// @return LOADER_OK on success, LOADER_FAIL on error
-static int Read(uint32_t Address, uint32_t Size, uint8_t *Buffer)
+int Read(uint32_t Address, uint32_t Size, uint8_t *Buffer)
 {
     SPI_CS_Select();
     // Send read command and 3-byte address
     SPI_TransmitReceive(CMD_READ);
     SPI_TransmitReceive((uint8_t)(Address >> 16));
     SPI_TransmitReceive((uint8_t)(Address >> 8));
-    SPI_TransmitReceive((uint8_t)(Address));    
+    SPI_TransmitReceive((uint8_t)(Address));
     // Read data
     for (uint32_t i = 0; i < Size; i++) {
         Buffer[i] = SPI_TransmitReceive(0xFF);
@@ -411,7 +412,7 @@ static int Read(uint32_t Address, uint32_t Size, uint8_t *Buffer)
 /// @param EraseStartAddress Start address (will be aligned to 4KB boundary)
 /// @param EraseEndAddress End address (will be aligned to 4KB boundary)
 /// @return LOADER_OK on success, LOADER_FAIL on error
-static int SectorErase(uint32_t EraseStartAddress, uint32_t EraseEndAddress)
+int SectorErase(uint32_t EraseStartAddress, uint32_t EraseEndAddress)
 {
     // Align addresses to 4 KB boundaries
     EraseStartAddress &= ~(0xFFF);
@@ -435,7 +436,7 @@ static int SectorErase(uint32_t EraseStartAddress, uint32_t EraseEndAddress)
 
 /// @brief Erase the entire flash chip
 /// @return LOADER_OK on success, LOADER_FAIL on error
-static int MassErase(void)
+int MassErase(void)
 {
     if (SPIFlash_WriteEnable() != LOADER_OK) 
         return LOADER_FAIL;
@@ -474,42 +475,41 @@ void Reset_Handler(void) {
         *dest++ = 0;
     }
     
-    // Jump to main program
-    main();
+    // Jump to Init
+    Init();
     
     // Should never reach here
     while (1) {}
 }
 
-/// @brief Main function
-int main(void) {
+/// @brief Init function
+int Init(void) {
     // Storage for JEDEC ID
     uint8_t jedecID[3] = {0};
-    
-    // Initialize LED GPIO
+
+    // Set vector table location to RAM (0x20000000)
+    SCB_VTOR = 0x20000000;
+
+    // Initialize LED
     LED_Init();
     
     // Initialize SPI
     SPI_Init();
     
-    // Main loop - this runs from RAM
+    // Infinite loop
     while (1) {
-        // LED ON
-        GPIOB_BSRR = LED_PIN_MASK;
-        
-        // Read JEDEC ID
+        // Read JEDEC ID (manufacturer, memory type, capacity)
         SPIFlash_ReadJEDEC_ID(jedecID);
         
-        // Delay
-        delay(100000);
+        // Turn on LED (PB15)
+        GPIOB_BSRR = (1UL << LED_PIN);
+        delay(500000);
         
-        // LED OFF
-        GPIOB_BSRR = (LED_PIN_MASK << 16);
-        
-        // Delay
-        delay(100000);
+        // Turn off LED (PB15)
+        GPIOB_BSRR = (1UL << (LED_PIN + 16));
+        delay(500000);
     }
     
-    // Never reached
+    // Should never reach here
     return 0;
-} 
+}

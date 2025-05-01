@@ -66,8 +66,8 @@ STM32_Programmer_CLI -c port=SWD -w ram_only_blink.bin 0x20000000 -s 0x20000000
 3. The reset handler:
    - Sets VTOR register to point to the RAM vector table
    - Initializes the BSS section
-   - Jumps to main
-4. Main function:
+   - Jumps to Init
+4. Init function:
    - Initializes GPIO for LED
    - Initializes SPI1 for Flash communication
    - Enters an infinite loop that blinks the LED and reads SPI Flash ID
