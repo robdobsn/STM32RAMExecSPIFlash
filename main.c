@@ -259,7 +259,7 @@ static uint8_t SPI_TransmitReceive(uint8_t data) {
 }
 
 ////////////////////////////////////////////////////////////
-// Flash Functions
+// SPI Flash Utility Functions
 ////////////////////////////////////////////////////////////
 
 /// @brief Wait until the Flash is not busy
@@ -333,12 +333,30 @@ static int SPIFlash_MxChipReset(void)
     return LOADER_OK;
 }
 
+/// @brief Read JEDEC ID (3 bytes) from Flash
+/// @param buf Buffer to store JEDEC ID
+static void SPIFlash_ReadJEDEC_ID(uint8_t *buf) {
+    SPI_CS_Select();
+    // Send 0x9F command (Read JEDEC ID)
+    SPI_TransmitReceive(0x9F);
+    // Read 3 bytes of data
+    buf[0] = SPI_TransmitReceive(0xFF); // Manufacturer ID
+    buf[1] = SPI_TransmitReceive(0xFF); // Memory Type
+    buf[2] = SPI_TransmitReceive(0xFF); // Capacity
+    SPI_CS_Deselect();
+}
+
+
+////////////////////////////////////////////////////////////
+// STM32 External Loader Flash Functions
+////////////////////////////////////////////////////////////
+
 /// @brief Write data to flash, handling page boundaries
 /// @param Address Flash address to write to
 /// @param Size Number of bytes to write
 /// @param buffer Data to write
 /// @return LOADER_OK on success, LOADER_FAIL on error
-static int SPIFlash_Write(uint32_t Address, uint32_t Size, uint8_t *buffer)
+static int Write(uint32_t Address, uint32_t Size, uint8_t *buffer)
 {
     while (Size > 0)
     {
@@ -373,7 +391,7 @@ static int SPIFlash_Write(uint32_t Address, uint32_t Size, uint8_t *buffer)
 /// @param Size Number of bytes to read
 /// @param Buffer Buffer to store read data
 /// @return LOADER_OK on success, LOADER_FAIL on error
-static int SPIFlash_Read(uint32_t Address, uint32_t Size, uint8_t *Buffer)
+static int Read(uint32_t Address, uint32_t Size, uint8_t *Buffer)
 {
     SPI_CS_Select();
     // Send read command and 3-byte address
@@ -393,7 +411,7 @@ static int SPIFlash_Read(uint32_t Address, uint32_t Size, uint8_t *Buffer)
 /// @param EraseStartAddress Start address (will be aligned to 4KB boundary)
 /// @param EraseEndAddress End address (will be aligned to 4KB boundary)
 /// @return LOADER_OK on success, LOADER_FAIL on error
-static int SPIFlash_SectorErase(uint32_t EraseStartAddress, uint32_t EraseEndAddress)
+static int SectorErase(uint32_t EraseStartAddress, uint32_t EraseEndAddress)
 {
     // Align addresses to 4 KB boundaries
     EraseStartAddress &= ~(0xFFF);
@@ -417,7 +435,7 @@ static int SPIFlash_SectorErase(uint32_t EraseStartAddress, uint32_t EraseEndAdd
 
 /// @brief Erase the entire flash chip
 /// @return LOADER_OK on success, LOADER_FAIL on error
-static int SPIFlash_MassErase(void)
+static int MassErase(void)
 {
     if (SPIFlash_WriteEnable() != LOADER_OK) 
         return LOADER_FAIL;
@@ -428,19 +446,6 @@ static int SPIFlash_MassErase(void)
     if (SPIFlash_WaitWhileBusy() != LOADER_OK) 
         return LOADER_FAIL;
     return LOADER_OK;
-}
-
-/// @brief Read JEDEC ID (3 bytes) from Flash
-/// @param buf Buffer to store JEDEC ID
-static void SPIFlash_ReadJEDEC_ID(uint8_t *buf) {
-    SPI_CS_Select();
-    // Send 0x9F command (Read JEDEC ID)
-    SPI_TransmitReceive(0x9F);
-    // Read 3 bytes of data
-    buf[0] = SPI_TransmitReceive(0xFF); // Manufacturer ID
-    buf[1] = SPI_TransmitReceive(0xFF); // Memory Type
-    buf[2] = SPI_TransmitReceive(0xFF); // Capacity
-    SPI_CS_Deselect();
 }
 
 ////////////////////////////////////////////////////////////

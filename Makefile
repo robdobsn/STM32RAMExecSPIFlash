@@ -30,10 +30,10 @@ MCU = -mcpu=cortex-m4 -mthumb -mfloat-abi=soft
 CFLAGS = $(MCU) -Wall -g -Os -ffunction-sections -fdata-sections
 
 # Linker flags
-LDFLAGS = $(MCU) -specs=nano.specs -specs=nosys.specs -Wl,--gc-sections -T stm32wl55jc_ram.ld
+LDFLAGS = $(MCU) -specs=nano.specs -specs=nosys.specs -Wl,--gc-sections -T stm32wl55jc_ram.ld -Wl,-Map=$(PROJECT).map
 
 # Source files
-SRCS = main.c
+SRCS = main.c Dev_Inf.c
 
 # Object files
 OBJS = $(SRCS:.c=.o)
